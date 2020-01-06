@@ -1,5 +1,12 @@
+'''
+相机标定程序
+Input: Demo_car_cal目录下的棋盘格照片
+Output: Demo_car_cal目录下的失真矫正参数文件wide_dist_pickle.p
+'''
+
 import numpy as np
-from cv2 import cv2
+import cv2
+#from cv2 import cv2
 import glob
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
@@ -16,7 +23,7 @@ objpoints = [] # 3d points in real world space
 imgpoints = [] # 2d points in image plane.
 
 # Make a list of calibration images
-Chessboard_images = glob.glob('Demo_camera_cal/GOPR*.JPG')
+Chessboard_images = glob.glob('Demo_camera_cal/image*.jpg')
 
 # Step through the list and search for chessboard corners
 for idx, fname in enumerate(Chessboard_images):
