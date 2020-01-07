@@ -3,13 +3,13 @@
 输出：从原始视频中提取出图像并进行失真矫正后保存
 '''
 import numpy as np
-from cv2 import cv2
+import cv2
 import glob
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import pickle
 
-video_input = 'GOPR1772.MP4'
+video_input = './20191231test/2.15ma.mp4'
 cap = cv2.VideoCapture(video_input)
 fps=cap.get(cv2.CAP_PROP_FPS) # 获取帧率
 totalFrameNumber = cap.get(cv2.CAP_PROP_FRAME_COUNT) #获取总帧数
@@ -30,15 +30,19 @@ def img_undistort(img,mtx,dist):
 count = 0
 #提取视频的频率，每多少帧提取一个
 frameFrequency=1
+
 while count < totalFrameNumber:
-    ret, image = cap.read()
-    count += 1
-    if (count % frameFrequency) == 0:
-        if ret:
-            undistort_image = img_undistort(image, mtx, dist)
-            cv2.imwrite('./GOPR1772_image/' + str(count) + '.jpg', undistort_image)
-            print(str(count))
-        else:
-            print(str(count)+' not ret, not image')
+    if(cap.isOpened()):
+        ret, image = cap.read()
+        count += 1
+        if (count % frameFrequency) == 0:
+            if ret:
+                undistort_image = img_undistort(image, mtx, dist)
+                cv2.imwrite('./20191231test/2.15ma_imgs/' + str(count) + '.jpg', undistort_image)
+                print(str(count))
+            else:
+                print(str(count)+' not ret, not image')
+        cv2.waitKey(1)
 print(".........end.........")
 cap.release()
+cv2.destroyAllWindows()
