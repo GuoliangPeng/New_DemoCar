@@ -6,12 +6,14 @@ import matplotlib.pyplot as plt
 import pickle
 
 class Image_process_binary:
-    def __init__(self,img,dist_pickle):
+    def __init__(self,img,dist_pickle,warper_pickle):
         """初始化数据"""
         self.img = img #原始图像
         self.dst_img = np.zeros((self.img.shape[0],self.img.shape[1],self.img.shape[2])) #私有化属性
+        self.warper_img = np.zeros((self.img.shape[0],self.img.shape[1],self.img.shape[2])) #私有化属性
         self.mtx = dist_pickle["mtx"]
         self.dist = dist_pickle["dist"]
+        self.M = warper_pickle["M"]
 
         self.orient = 'x'
         self.sobel_kernel = 3
@@ -31,9 +33,15 @@ class Image_process_binary:
         dst = cv2.undistort(self.img, self.mtx, self.dist, None, self.mtx)
         return dst
     
+    def img_warper(self):
+        """图像透视变换"""
+        img_size = (self.dst_img.shape[1], self.dst_img.shape[0])
+        warped = cv2.warpPerspective(self.dst_img, self.M, img_size, flags=cv2.INTER_NEAREST)  # keep same size as input image
+        return warped
+
     def abs_sobel_thresh(self):
         """x或y方向的梯度大小二值化"""
-        gray_img = cv2.cvtColor(self.dst_img, cv2.COLOR_RGB2GRAY)
+        gray_img = cv2.cvtColor(self.warper_img, cv2.COLOR_RGB2GRAY)
         if self.orient == 'x':
             sobel = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=self.sobel_kernel) # Take the derivative in x
         if self.orient == 'y':
@@ -47,7 +55,7 @@ class Image_process_binary:
 
     def mag_thresh(self):
         """x，y综合梯度大小二值化"""
-        gray_img = cv2.cvtColor(self.dst_img, cv2.COLOR_RGB2GRAY)
+        gray_img = cv2.cvtColor(self.warper_img, cv2.COLOR_RGB2GRAY)
         sobelx = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=self.sobel_kernel)
         sobely = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=self.sobel_kernel)
         magnitude = np.sqrt(sobelx**2 + sobely**2)
@@ -59,7 +67,7 @@ class Image_process_binary:
 
     def dir_threshold(self):
         """梯度方向二值化"""
-        gray_img = cv2.cvtColor(self.dst_img, cv2.COLOR_RGB2GRAY)
+        gray_img = cv2.cvtColor(self.warper_img, cv2.COLOR_RGB2GRAY)
         sobelx = cv2.Sobel(gray_img, cv2.CV_64F, 1, 0, ksize=self.sobel_kernel)
         sobely = cv2.Sobel(gray_img, cv2.CV_64F, 0, 1, ksize=self.sobel_kernel)
         absgraddir = np.arctan2(np.absolute(sobely),np.absolute(sobelx))
@@ -69,18 +77,18 @@ class Image_process_binary:
     
     def rgb_threshold(self):
         """RGB颜色空间二值化"""
-        r_rgb = self.dst_img[:,:,0]
+        r_rgb = self.warper_img[:,:,0]
         r_binary = np.zeros_like(r_rgb)
         r_binary[(r_rgb >= self.r_thresh[0]) & (r_rgb <= self.r_thresh[1])] = 1
 
-        g_rgb = self.dst_img[:,:,1]
+        g_rgb = self.warper_img[:,:,1]
         g_binary = np.zeros_like(g_rgb)
         g_binary[(g_rgb >= self.g_thresh[0]) & (g_rgb <= self.g_thresh[1])] = 1
         return r_binary,g_binary
 
     def hls_threshold(self):
         """HLS颜色空间二值化"""
-        hls = cv2.cvtColor(self.dst_img, cv2.COLOR_RGB2HLS)
+        hls = cv2.cvtColor(self.warper_img, cv2.COLOR_RGB2HLS)
 
         h_channel = hls[:,:,0]
         h_binary = np.zeros_like(h_channel)
@@ -97,7 +105,7 @@ class Image_process_binary:
 
     def lab_threshold(self):
         """Lab颜色空间二值化"""
-        lab = cv2.cvtColor(self.dst_img, cv2.COLOR_RGB2Lab)
+        lab = cv2.cvtColor(self.warper_img, cv2.COLOR_RGB2Lab)
 
         b_lab = lab[:,:,2]
         if np.max(b_lab) > 100:
@@ -111,8 +119,10 @@ class Image_process_binary:
         return b_lab_binary,l_lab_binary
 
     def pipeline(self):
-        #self.dst_img = self.img_undistort() # self.dst_img更新
-        self.dst_img = self.img
+        self.dst_img = self.img_undistort() # self.dst_img更新
+        #self.dst_img = self.img
+        self.warper_img = self.img_warper() #self.warper_img更新
+        
         sxbinary = self.abs_sobel_thresh()
         dir_binary = self.dir_threshold()
         r_binary, g_binary = self.rgb_threshold()
@@ -128,8 +138,9 @@ class Image_process_binary:
         return color_binary,combined_binary
 
 class Image_process_line:
-    def __init__(self,dst_img,Lines_num):       
+    def __init__(self,dst_img,Lines_num,warper_pickle):       
         self.binary_warped = dst_img
+        self.Minv = warper_pickle["Minv"]
         # HYPERPARAMETERS
         # Choose the number of sliding windows
         self.nwindows = 9
