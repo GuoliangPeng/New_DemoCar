@@ -119,8 +119,8 @@ class Image_process_binary:
         return b_lab_binary,l_lab_binary
 
     def pipeline(self):
-        self.dst_img = self.img_undistort() # self.dst_img更新
-        #self.dst_img = self.img
+        #self.dst_img = self.img_undistort() # self.dst_img更新
+        self.dst_img = self.img
         self.warper_img = self.img_warper() #self.warper_img更新
         
         sxbinary = self.abs_sobel_thresh()
@@ -138,7 +138,7 @@ class Image_process_binary:
         return color_binary,combined_binary
 
 class Image_process_line:
-    def __init__(self,dst_img,Lines_num,warper_pickle):       
+    def __init__(self,dst_img,Lines_num,warper_pickle):
         self.binary_warped = dst_img
         self.Minv = warper_pickle["Minv"]
         # HYPERPARAMETERS
@@ -416,3 +416,100 @@ class Image_process_line:
             plt.plot(right_fitx, ploty, color='yellow')
             ## End visualization steps ## 
             return leftx,lefty,rightx,righty,left_fitx, right_fitx, ploty, result
+    
+def measure_curvature_real_center(img,ploty,center_fitx):
+    """计算偏差和曲率（中心车道线）"""
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 6.5/1450 # meters per pixel in x dimension
+    # Start by generating our fake example data
+    # Make sure to feed in your real data instead in your project!
+    center_fit_cr = np.polyfit(ploty*ym_per_pix, center_fitx*xm_per_pix, 2)
+    # Define y-value where we want radius of curvature
+    # We'll choose the maximum y-value, corresponding to the bottom of the image
+    #ploty = np.linspace(0, binary_warped_img.shape[0]-1, binary_warped_img.shape[0])
+    y_eval = np.max(ploty)   
+    #####Implement the calculation of R_curve (radius of curvature) #####
+    center_curverad = (1+(2*center_fit_cr[0]*y_eval*ym_per_pix+center_fit_cr[1])**2)**1.5/np.absolute(2*center_fit_cr[0])  
+    ## Implement the calculation of the left line here
+    #left_down_realx = left_fit_cr[0]*((y_eval*ym_per_pix)**2)+left_fit_cr[1]*(y_eval*ym_per_pix)+left_fit_cr[2]
+    #right_down_realx =right_fit_cr[0]*((y_eval*ym_per_pix)**2)+right_fit_cr[1]*(y_eval*ym_per_pix)+right_fit_cr[2]
+    #distance_from_center = (right_down_realx - left_down_realx)/2 - (binary_warped_img.shape[1]/2)*xm_per_pix
+    lane_xm_per_pix = xm_per_pix
+    line_pos = center_fitx[img.shape[0]-1] * lane_xm_per_pix
+    veh_pos = ((img.shape[1] * lane_xm_per_pix) / 2.)
+    distance_from_center = veh_pos - line_pos
+    return center_curverad, distance_from_center
+
+def measure_curvature_real_double(img,ploty,left_fitx,right_fitx):
+    """计算偏差和曲率(左右车道线)"""
+    # Define conversions in x and y from pixels space to meters
+    ym_per_pix = 30/720 # meters per pixel in y dimension
+    xm_per_pix = 3.7/700 # meters per pixel in x dimension
+    # Start by generating our fake example data
+    # Make sure to feed in your real data instead in your project!
+    #left_fit_cr = np.polyfit(warped_lefty*ym_per_pix, warped_leftx*xm_per_pix, 2)
+    #right_fit_cr = np.polyfit(warped_righty*ym_per_pix, warped_rightx*xm_per_pix, 2)
+    left_fit_cr = np.polyfit(ploty*ym_per_pix, left_fitx*xm_per_pix, 2)
+    right_fit_cr = np.polyfit(ploty*ym_per_pix, right_fitx*xm_per_pix, 2)
+    # Define y-value where we want radius of curvature
+    # We'll choose the maximum y-value, corresponding to the bottom of the image
+    #ploty = np.linspace(0, binary_warped_img.shape[0]-1, binary_warped_img.shape[0])
+    y_eval = np.max(ploty)   
+    #####Implement the calculation of R_curve (radius of curvature) #####
+    left_curverad = (1+(2*left_fit_cr[0]*y_eval*ym_per_pix+left_fit_cr[1])**2)**1.5/np.absolute(2*left_fit_cr[0])  ## Implement the calculation of the left line here
+    right_curverad = (1+(2*right_fit_cr[0]*y_eval*ym_per_pix+right_fit_cr[1])**2)**1.5/np.absolute(2*right_fit_cr[0])  ## Implement the calculation of the right line here
+    curve_direction = (left_curverad+right_curverad)/2.0
+    #left_down_realx = left_fit_cr[0]*((y_eval*ym_per_pix)**2)+left_fit_cr[1]*(y_eval*ym_per_pix)+left_fit_cr[2]
+    #right_down_realx =right_fit_cr[0]*((y_eval*ym_per_pix)**2)+right_fit_cr[1]*(y_eval*ym_per_pix)+right_fit_cr[2]
+    #distance_from_center = (right_down_realx - left_down_realx)/2 - (binary_warped_img.shape[1]/2)*xm_per_pix
+    lane_width = np.absolute(left_fitx[-1] - right_fitx[-1])
+    lane_xm_per_pix=3.7/lane_width
+    veh_pos = (((left_fitx[719] + right_fitx[719]) * lane_xm_per_pix) / 2.)
+    cen_pos = ((img.shape[1] * lane_xm_per_pix) / 2.)
+    distance_from_center = veh_pos - cen_pos
+    return left_curverad, right_curverad, curve_direction, distance_from_center
+
+def drawing_center(undist, bin_warped, Minv, center_fitx, ploty):
+    """将检测到的车道边界扭曲回失真矫正图像（中心车道线）"""
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(bin_warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_center1 = np.array([np.transpose(np.vstack([center_fitx-20, ploty]))])
+    pts_center2 = np.array([np.flipud(np.transpose(np.vstack([center_fitx+20, ploty])))])
+    pts = np.hstack((pts_center1, pts_center2))
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (undist.shape[1], undist.shape[0])) 
+    # Combine the result with the original image
+    line_img = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
+    return line_img
+
+def drawing_double(undist, bin_warped,Minv, left_fitx, right_fitx, ploty):
+    """将检测到的车道边界扭曲回失真矫正图像（左右车道线）"""
+    # Create an image to draw the lines on
+    warp_zero = np.zeros_like(bin_warped).astype(np.uint8)
+    color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
+    # Recast the x and y points into usable format for cv2.fillPoly()
+    pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
+    pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+    pts = np.hstack((pts_left, pts_right))
+    # Draw the lane onto the warped blank image
+    cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
+    # Warp the blank back to original image space using inverse perspective matrix (Minv)
+    newwarp = cv2.warpPerspective(color_warp, Minv, (undist.shape[1], undist.shape[0])) 
+    # Combine the result with the original image
+    line_img = cv2.addWeighted(undist, 1, newwarp, 0.3, 0)
+    return line_img
+
+def putimg(line_img, curvature, offset):
+    """视频上显示实时文字(车道线曲率和当前测偏距离)"""
+    info_cur="Curvature: {:6.3f} m".format(curvature)
+    #info_offset = "Off center: {0} {1:3.3f}m".format(direction, offset)
+    info_offset = "Off center: {:3.3f}m".format(offset)
+    cv2.putText(line_img,info_cur,(100,50),cv2.FONT_HERSHEY_PLAIN,3.0,(0,0,255),3)
+    cv2.putText(line_img,info_offset,(100,150),cv2.FONT_HERSHEY_PLAIN,3.0,(0,0,255),3)
+    result = line_img
+    return result
