@@ -63,7 +63,7 @@ class Image_process_binary:
         sxbinary = np.zeros_like(scaled_sobel)
         sxbinary[(scaled_sobel >= self.mag_thresh[0]) & (scaled_sobel <= self.mag_thresh[1])] = 1
         binary_output = sxbinary
-        return binary_output
+        return binary_output,warper_pickle
 
     def dir_threshold(self):
         """梯度方向二值化"""
@@ -119,8 +119,8 @@ class Image_process_binary:
         return b_lab_binary,l_lab_binary
 
     def pipeline(self):
-        #self.dst_img = self.img_undistort() # self.dst_img更新
-        self.dst_img = self.img
+        self.dst_img = self.img_undistort() # self.dst_img更新
+        #self.dst_img = self.img
         self.warper_img = self.img_warper() #self.warper_img更新
         
         sxbinary = self.abs_sobel_thresh()
@@ -129,18 +129,18 @@ class Image_process_binary:
         h_binary, l_binary, s_binary = self.hls_threshold()
         b_lab_binary, l_lab_binary = self.lab_threshold()
         
-        # Stack each channel
+        # Stack each channelbin_warped
         #color_binary = np.dstack(( np.zeros_like(sxbinary), sxbinary, s_binary)) * 255
         color_binary = np.dstack((r_binary, sxbinary, l_binary)) * 255
         # Combine the two binary thresholds
         combined_binary = np.zeros_like(sxbinary)
         combined_binary[(l_lab_binary==1)&(b_lab_binary==1)] = 1#(l_lab_binary==1)&(b_lab_binary==1)  (g_binary==1)&(r_binary==1)  (s_binary==1)&(dir_binary==1)  |(sxbinary == 1)&(dir_binary==1)#(s_binary==1)&(dir_binary==1)|(r_binary == 1)|(l_binary == 1)|(sxbinary == 1)#(b_binary == 1)
-        return color_binary,combined_binary
+        return self.dst_img,color_binary,combined_binary
 
 class Image_process_line:
-    def __init__(self,dst_img,Lines_num,warper_pickle):
-        self.binary_warped = dst_img
-        self.Minv = warper_pickle["Minv"]
+    def __init__(self,binary_warped_img,Lines_num):
+        self.binary_warped = binary_warped_img
+        #self.Minv = warper_pickle["Minv"]
         # HYPERPARAMETERS
         # Choose the number of sliding windows
         self.nwindows = 9
@@ -153,8 +153,8 @@ class Image_process_line:
         self.Lines_num = Lines_num
         if self.Lines_num == 1:
             self.center_fit = [] #私有属性，拟合的二次曲线中心线方程三个参数
-            #self.centerx = [] #拟合的二次曲线中心线的x坐标
-            #self.centery = [] #拟合的二次曲线中心线的y坐标
+            self.last_centerx = [] #上次拟合二次曲线中心线所需的x坐标
+            self.last_centery = [] #上次拟合二次曲线中心线所需的y坐标
         elif self.Lines_num == 2:
             self.left_fit = [] #私有属性，拟合的二次曲线左侧线方程三个参数
             self.right_fit = [] #私有属性，拟合的二次曲线右侧线方程三个参数
@@ -349,6 +349,13 @@ class Image_process_line:
             # 新二值化图像帧上符合条件的点的x，y坐标的列表
             centerx = nonzerox[center_lane_inds]
             centery = nonzeroy[center_lane_inds]
+            if len(centerx)>30:
+                self.last_centerx = centerx
+                self.last_centery = centery
+            else:
+                centerx = self.last_centerx
+                centery = self.last_centery
+            print(len(centerx))
             ### Fit a second order polynomial to each with np.polyfit() ###
             ### 曲线拟合，参数更新
             self.center_fit = np.polyfit(centery,centerx,2)
@@ -372,7 +379,7 @@ class Image_process_line:
             # Plot the polynomial lines onto the image
             plt.plot(center_fitx, ploty, color='yellow')
             ## End visualization steps ## 
-            return centerx,centery,center_fitx,ploty, result
+            return self.center_fit,centerx,centery,center_fitx,ploty, result
         elif self.Lines_num == 2:            
             left_lane_inds = ((nonzerox > (self.left_fit[0]*(nonzeroy**2) + self.left_fit[1]*nonzeroy + self.left_fit[2] - self.margin))
                 & (nonzerox < (self.left_fit[0]*(nonzeroy**2) + self.left_fit[1]*nonzeroy + self.left_fit[2] + self.margin)))
@@ -415,7 +422,7 @@ class Image_process_line:
             plt.plot(left_fitx, ploty, color='yellow')
             plt.plot(right_fitx, ploty, color='yellow')
             ## End visualization steps ## 
-            return leftx,lefty,rightx,righty,left_fitx, right_fitx, ploty, result
+            return self.left_fit,self.right_fit,leftx,lefty,rightx,righty,left_fitx, right_fitx, ploty, result
     
 def measure_curvature_real_center(img,ploty,center_fitx):
     """计算偏差和曲率（中心车道线）"""
@@ -470,8 +477,9 @@ def measure_curvature_real_double(img,ploty,left_fitx,right_fitx):
     distance_from_center = veh_pos - cen_pos
     return left_curverad, right_curverad, curve_direction, distance_from_center
 
-def drawing_center(undist, bin_warped, Minv, center_fitx, ploty):
+def drawing_center(undist, bin_warped,warper_pickle,center_fitx, ploty):
     """将检测到的车道边界扭曲回失真矫正图像（中心车道线）"""
+    Minv = warper_pickle["Minv"]
     # Create an image to draw the lines on
     warp_zero = np.zeros_like(bin_warped).astype(np.uint8)
     color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
